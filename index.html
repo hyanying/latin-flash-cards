@@ -16,6 +16,8 @@
         <span class="title-sub">Flash Cards</span>
       </h1>
       <div class="header-actions">
+        <button id="btn-export" class="btn btn-ghost btn-sm" title="Export cards and audio to files">Export</button>
+        <button id="btn-import" class="btn btn-ghost btn-sm" title="Import cards and audio from files">Import</button>
         <button id="btn-add-card" class="btn btn-primary" title="Add new card">+ New Card</button>
         <button id="btn-study" class="btn btn-secondary" title="Start study mode">Study</button>
       </div>
@@ -208,6 +210,31 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-ghost" id="delete-cancel">Cancel</button>
         <button type="button" class="btn btn-danger" id="delete-confirm">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: IMPORT DATA ===== -->
+  <div class="modal-overlay hidden" id="import-modal-overlay">
+    <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
+      <div class="modal-header">
+        <h2 id="import-modal-title">Import Data</h2>
+        <button class="btn btn-ghost modal-close" id="import-modal-close" aria-label="Close">✕</button>
+      </div>
+      <p class="modal-body-text">This will replace all existing cards and categories.</p>
+      <div class="form-group">
+        <label for="import-json-file">cards.json <span class="required">*</span></label>
+        <input type="file" id="import-json-file" accept=".json" class="file-input" />
+      </div>
+      <div class="form-group">
+        <label for="import-audio-files">Audio files <span class="optional">(optional)</span></label>
+        <input type="file" id="import-audio-files" accept="audio/*" multiple class="file-input" />
+        <p class="form-hint">Select the audio files from the audio/ folder.</p>
+      </div>
+      <div class="form-error hidden" id="import-form-error"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" id="import-modal-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="import-confirm">Import</button>
       </div>
     </div>
   </div>

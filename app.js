@@ -178,6 +178,13 @@ const dom = {
   studyIndexLabel:   $('study-index-label'),
   studyProgressBar:  $('study-progress-bar'),
   studyCategoryFilter: $('study-category-filter'),
+  // export / import
+  btnExport:            $('btn-export'),
+  btnImport:            $('btn-import'),
+  importModalOverlay:   $('import-modal-overlay'),
+  importJsonFile:       $('import-json-file'),
+  importAudioFiles:     $('import-audio-files'),
+  importFormError:      $('import-form-error'),
   // toast
   toast:             $('toast'),
 };
@@ -190,6 +197,16 @@ function bindEvents() {
   // Header buttons
   $('btn-add-card').addEventListener('click', openNewCardModal);
   $('btn-study').addEventListener('click', openStudyMode);
+  $('btn-export').addEventListener('click', () => exportData().catch(e => showToast('Export failed: ' + e.message, 'error')));
+  $('btn-import').addEventListener('click', openImportModal);
+
+  // Import modal
+  $('import-modal-close').addEventListener('click', closeImportModal);
+  $('import-modal-cancel').addEventListener('click', closeImportModal);
+  $('import-modal-overlay').addEventListener('click', e => {
+    if (e.target === $('import-modal-overlay')) closeImportModal();
+  });
+  $('import-confirm').addEventListener('click', () => handleImport().catch(e => showFormError(dom.importFormError, 'Error: ' + e.message)));
 
   // Sidebar toggle (mobile)
   dom.sidebarToggle.addEventListener('click', toggleSidebar);
@@ -882,6 +899,158 @@ function showToast(msg, type = '') {
   t.classList.remove('hidden');
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.add('hidden'), 2800);
+}
+
+/* ------------------------------------------------------------------ */
+/*  EXPORT / IMPORT                                                     */
+/* ------------------------------------------------------------------ */
+
+function mimeToExt(mime) {
+  const map = {
+    'audio/mpeg': 'mp3', 'audio/mp3': 'mp3',
+    'audio/wav': 'wav', 'audio/wave': 'wav', 'audio/x-wav': 'wav',
+    'audio/ogg': 'ogg',
+    'audio/mp4': 'm4a', 'audio/m4a': 'm4a', 'audio/x-m4a': 'm4a',
+    'audio/webm': 'webm',
+    'audio/aac': 'aac',
+  };
+  return map[mime] || 'audio';
+}
+
+function downloadJSON(filename, obj) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function downloadBase64(filename, dataURL) {
+  const a = document.createElement('a');
+  a.href = dataURL; a.download = filename; a.click();
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function exportData() {
+  const exportCards = state.cards.map(card => {
+    const c = { ...card };
+    if (card.hasAudio) {
+      const b64 = loadAudio(card.id);
+      if (b64) {
+        const mime = b64.split(';')[0].slice(5);
+        c.audioFile = `audio/${card.id}.${mimeToExt(mime)}`;
+      } else {
+        c.hasAudio = false;
+      }
+    }
+    return c;
+  });
+
+  downloadJSON('cards.json', {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    categories: state.categories,
+    cards: exportCards,
+  });
+
+  let audioCount = 0;
+  for (const card of state.cards) {
+    if (!card.hasAudio) continue;
+    const b64 = loadAudio(card.id);
+    if (!b64) continue;
+    const mime = b64.split(';')[0].slice(5);
+    await new Promise(r => setTimeout(r, 400));
+    downloadBase64(`${card.id}.${mimeToExt(mime)}`, b64);
+    audioCount++;
+  }
+
+  const msg = audioCount
+    ? `Exported cards.json + ${audioCount} audio file${audioCount !== 1 ? 's' : ''}. Place audio files in an audio/ folder in your project.`
+    : 'Exported cards.json.';
+  showToast(msg, 'success');
+}
+
+function openImportModal() {
+  dom.importJsonFile.value = '';
+  dom.importAudioFiles.value = '';
+  hideFormError(dom.importFormError);
+  openModal(dom.importModalOverlay);
+}
+
+function closeImportModal() {
+  closeModal(dom.importModalOverlay);
+}
+
+async function handleImport() {
+  hideFormError(dom.importFormError);
+  const jsonFile = dom.importJsonFile.files[0];
+  if (!jsonFile) {
+    showFormError(dom.importFormError, 'Please select a cards.json file.');
+    return;
+  }
+
+  const text = await jsonFile.text();
+  let data;
+  try { data = JSON.parse(text); } catch (_) {
+    showFormError(dom.importFormError, 'Invalid JSON file.');
+    return;
+  }
+  if (!Array.isArray(data.cards)) {
+    showFormError(dom.importFormError, 'File does not look like a cards.json export.');
+    return;
+  }
+
+  // Build audio file map keyed by filename
+  const audioMap = {};
+  for (const f of dom.importAudioFiles.files) audioMap[f.name] = f;
+
+  // Clear existing audio
+  for (const card of state.cards) {
+    if (card.hasAudio) removeAudio(card.id);
+  }
+
+  // Restore cards
+  state.cards = [];
+  let audioRestored = 0;
+
+  for (const raw of data.cards) {
+    const card = { ...raw };
+    // Migrate old single-category format
+    if (!Array.isArray(card.categories)) {
+      card.categories = card.category ? [card.category] : [];
+      delete card.category;
+    }
+    // Restore audio
+    if (card.hasAudio && card.audioFile) {
+      const basename = card.audioFile.split('/').pop();
+      const file = audioMap[basename];
+      if (file) {
+        const b64 = await fileToBase64(file);
+        if (saveAudio(card.id, b64)) { audioRestored++; } else { card.hasAudio = false; }
+      } else {
+        card.hasAudio = false;
+      }
+    }
+    delete card.audioFile;
+    state.cards.push(card);
+  }
+
+  state.categories = data.categories || [];
+  state.activeCategory = 'all';
+  saveJSON(STORAGE_KEYS.CARDS, state.cards);
+  saveJSON(STORAGE_KEYS.CATEGORIES, state.categories);
+
+  closeImportModal();
+  render();
+  showToast(`Imported ${state.cards.length} cards${audioRestored ? ` + ${audioRestored} audio files` : ''}.`, 'success');
 }
 
 /* ------------------------------------------------------------------ */
