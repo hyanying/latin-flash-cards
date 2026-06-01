@@ -626,6 +626,22 @@ a { color: var(--color-accent); }
 .audio-upload-label:hover { color: var(--color-accent); }
 .audio-upload-icon { font-size: 1.25rem; }
 
+/* ---------- FILE INPUT ---------- */
+.file-input {
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+.file-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(124,79,30,.15);
+}
+
 /* ---------- LOADING OVERLAY ---------- */
 .loading-overlay {
   position: fixed; inset: 0; z-index: 999;

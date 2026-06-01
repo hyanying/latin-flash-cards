@@ -180,6 +180,12 @@ const dom = {
   studyIndexLabel:    $('study-index-label'),
   studyProgressBar:   $('study-progress-bar'),
   studyCategoryFilter:$('study-category-filter'),
+  // export / import
+  btnExport:          $('btn-export'),
+  btnImport:          $('btn-import'),
+  importModalOverlay: $('import-modal-overlay'),
+  importZipFile:      $('import-zip-file'),
+  importFormError:    $('import-form-error'),
   // toast
   toast:              $('toast'),
 };
@@ -200,6 +206,16 @@ function bindEvents() {
   // Header buttons
   $('btn-add-card').addEventListener('click', openNewCardModal);
   $('btn-study').addEventListener('click', openStudyMode);
+  $('btn-export').addEventListener('click', () => exportData().catch(e => showToast('Export failed: ' + e.message, 'error')));
+  $('btn-import').addEventListener('click', openImportModal);
+
+  // Import modal
+  $('import-modal-close').addEventListener('click', closeImportModal);
+  $('import-modal-cancel').addEventListener('click', closeImportModal);
+  $('import-modal-overlay').addEventListener('click', e => {
+    if (e.target === $('import-modal-overlay')) closeImportModal();
+  });
+  $('import-confirm').addEventListener('click', () => handleImport().catch(e => showFormError(dom.importFormError, 'Import failed: ' + e.message)));
 
   // Sidebar toggle (mobile)
   dom.sidebarToggle.addEventListener('click', toggleSidebar);
@@ -905,6 +921,190 @@ function showToast(msg, type = '') {
   t.classList.remove('hidden');
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.add('hidden'), 2800);
+}
+
+/* ------------------------------------------------------------------ */
+/*  EXPORT / IMPORT                                                     */
+/* ------------------------------------------------------------------ */
+
+// ── CSV helpers ──────────────────────────────────────────────────────
+
+function csvEscape(val) {
+  const s = String(val == null ? '' : val);
+  if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+function cardsToCSV(cards) {
+  const headers = ['id', 'latin', 'english', 'notes', 'categories', 'audio_file'];
+  const rows = cards.map(card => [
+    card.id,
+    card.latin,
+    card.english,
+    card.notes || '',
+    (card.categories || []).join('|'),
+    card.audioPath || '',
+  ]);
+  return [headers, ...rows].map(row => row.map(csvEscape).join(',')).join('\n');
+}
+
+function parseCSVLine(line) {
+  const fields = [];
+  let field = '', inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') { field += '"'; i++; }
+      else if (ch === '"') { inQuotes = false; }
+      else { field += ch; }
+    } else {
+      if (ch === '"') { inQuotes = true; }
+      else if (ch === ',') { fields.push(field); field = ''; }
+      else { field += ch; }
+    }
+  }
+  fields.push(field);
+  return fields;
+}
+
+function parseCSV(text) {
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const headers = parseCSVLine(lines[0]).map(h => h.trim());
+  return lines.slice(1).map(line => {
+    const values = parseCSVLine(line);
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = (values[i] || '').trim(); });
+    return obj;
+  });
+}
+
+function downloadBlob(filename, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ── Export ───────────────────────────────────────────────────────────
+
+async function exportData() {
+  const btn = dom.btnExport;
+  btn.disabled = true;
+  btn.textContent = 'Exporting…';
+
+  try {
+    const zip = new JSZip();
+    zip.file('cards.csv', cardsToCSV(state.cards));
+
+    const audioFolder = zip.folder('audio');
+    let audioCount = 0;
+    for (const card of state.cards) {
+      if (!card.audioPath) continue;
+      const { data, error } = await db.storage.from('audio').download(card.audioPath);
+      if (error || !data) continue;
+      audioFolder.file(card.audioPath, data);
+      audioCount++;
+    }
+
+    const blob = await zip.generateAsync({ type: 'blob' });
+    downloadBlob('latin-flash-cards-export.zip', blob);
+    showToast(`Exported ${state.cards.length} cards${audioCount ? ` + ${audioCount} audio files` : ''}.`, 'success');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Export';
+  }
+}
+
+// ── Import ───────────────────────────────────────────────────────────
+
+function openImportModal() {
+  dom.importZipFile.value = '';
+  hideFormError(dom.importFormError);
+  openModal(dom.importModalOverlay);
+}
+
+function closeImportModal() {
+  closeModal(dom.importModalOverlay);
+}
+
+async function handleImport() {
+  hideFormError(dom.importFormError);
+  const file = dom.importZipFile.files[0];
+  if (!file) { showFormError(dom.importFormError, 'Please select a ZIP file.'); return; }
+
+  const btn = $('import-confirm');
+  btn.disabled = true;
+  btn.textContent = 'Importing…';
+
+  try {
+    const zip = await JSZip.loadAsync(file);
+
+    const csvFile = zip.file('cards.csv');
+    if (!csvFile) throw new Error('No cards.csv found in ZIP.');
+    const csvText = await csvFile.async('string');
+    const rows = parseCSV(csvText);
+    if (rows.length === 0) throw new Error('cards.csv is empty or invalid.');
+
+    // Build audio filename map and card rows
+    const audioFileMap = {};
+    const cardRows = rows.map(row => {
+      const id = (row.id && row.id.trim())
+        ? row.id.trim()
+        : 'card_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+      if (row.audio_file) audioFileMap[id] = row.audio_file;
+      return {
+        id,
+        latin:      row.latin      || '',
+        english:    row.english    || '',
+        notes:      row.notes      || '',
+        categories: row.categories ? row.categories.split('|').filter(Boolean) : [],
+        has_audio:  false,
+        audio_path: null,
+        created_at: Date.now(),
+      };
+    }).filter(r => r.latin && r.english);
+
+    // Upload audio files
+    for (const row of cardRows) {
+      const audioFileName = audioFileMap[row.id];
+      if (!audioFileName) continue;
+      const audioEntry = zip.file('audio/' + audioFileName);
+      if (!audioEntry) continue;
+      const blob = await audioEntry.async('blob');
+      const ext  = audioFileName.split('.').pop().toLowerCase();
+      const audioPath = `${row.id}.${ext}`;
+      const { error } = await db.storage.from('audio').upload(audioPath, blob, { upsert: true });
+      if (!error) { row.has_audio = true; row.audio_path = audioPath; }
+    }
+
+    // Extract categories preserving order of first appearance
+    const allCats = [...new Set(cardRows.flatMap(r => r.categories))];
+
+    // Replace all existing data
+    await db.from('cards').delete().not('id', 'is', null);
+    await db.from('categories').delete().not('id', 'is', null);
+
+    if (cardRows.length > 0) {
+      const { error } = await db.from('cards').insert(cardRows);
+      if (error) throw error;
+    }
+    if (allCats.length > 0) {
+      const { error } = await db.from('categories').insert(allCats.map((name, i) => ({ name, pos: i })));
+      if (error) throw error;
+    }
+
+    await loadData();
+    state.activeCategory = 'all';
+    closeImportModal();
+    render();
+    showToast(`Imported ${cardRows.length} cards.`, 'success');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Import';
+  }
 }
 
 /* ------------------------------------------------------------------ */
