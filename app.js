@@ -1,56 +1,44 @@
 /* ============================================================
    LATIN FLASH CARDS — app.js
-   Pure vanilla JS, no dependencies. All data in localStorage.
+   Pure vanilla JS. Data stored in Supabase (Postgres + Storage).
    ============================================================ */
 
 'use strict';
 
 /* ------------------------------------------------------------------ */
-/*  STORAGE HELPERS                                                     */
+/*  SUPABASE CLIENT                                                     */
 /* ------------------------------------------------------------------ */
 
-const STORAGE_KEYS = {
-  CARDS:      'latinfc_cards',
-  CATEGORIES: 'latinfc_categories',
-  AUDIO:      'latinfc_audio_',   // prefix — key = prefix + cardId
-};
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-function loadJSON(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch (_) {
-    return fallback;
-  }
+/* ------------------------------------------------------------------ */
+/*  DATA HELPERS                                                        */
+/* ------------------------------------------------------------------ */
+
+function normalizeCard(row) {
+  return {
+    id:         row.id,
+    latin:      row.latin,
+    english:    row.english,
+    notes:      row.notes      || '',
+    categories: row.categories || [],
+    hasAudio:   row.has_audio  || false,
+    audioPath:  row.audio_path || null,
+    createdAt:  row.created_at,
+  };
 }
 
-function saveJSON(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch (e) {
-    // Quota exceeded or similar
-    showToast('Storage error: ' + e.message, 'error');
-    return false;
-  }
-}
-
-function loadAudio(cardId) {
-  return localStorage.getItem(STORAGE_KEYS.AUDIO + cardId) || null;
-}
-
-function saveAudio(cardId, base64DataURL) {
-  try {
-    localStorage.setItem(STORAGE_KEYS.AUDIO + cardId, base64DataURL);
-    return true;
-  } catch (e) {
-    showToast('Audio storage failed — file may be too large.', 'error');
-    return false;
-  }
-}
-
-function removeAudio(cardId) {
-  localStorage.removeItem(STORAGE_KEYS.AUDIO + cardId);
+function cardToRow(card) {
+  return {
+    id:          card.id,
+    latin:       card.latin,
+    english:     card.english,
+    notes:       card.notes,
+    categories:  card.categories,
+    has_audio:   card.hasAudio,
+    audio_path:  card.audioPath,
+    created_at:  card.createdAt,
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -58,7 +46,7 @@ function removeAudio(cardId) {
 /* ------------------------------------------------------------------ */
 
 let state = {
-  cards:           [],     // [{ id, latin, english, notes, categories, hasAudio, createdAt }]
+  cards:           [],     // [{ id, latin, english, notes, categories, hasAudio, audioPath, createdAt }]
   categories:      [],     // [string]
   activeCategory:  'all',  // 'all' | category name
   searchQuery:     '',
@@ -68,8 +56,8 @@ let state = {
   studyFlipped:    false,
   studyCategory:   'all',
   // edit
-  pendingDeleteId: null,
-  pendingAudioB64: null,   // base64 data url for the current upload before save
+  pendingDeleteId:    null,
+  pendingAudioFile:   null,   // File object awaiting upload
   pendingAudioRemove: false,
 };
 
@@ -77,54 +65,67 @@ let state = {
 /*  INIT                                                                */
 /* ------------------------------------------------------------------ */
 
-function init() {
-  state.cards      = loadJSON(STORAGE_KEYS.CARDS,      []);
-  state.categories = loadJSON(STORAGE_KEYS.CATEGORIES, []);
-
-  // Seed sample cards on first ever load
-  if (state.cards.length === 0) {
-    seedSampleData();
+async function init() {
+  showLoading(true);
+  try {
+    await loadData();
+    if (state.cards.length === 0) await seedSampleData();
+  } catch (err) {
+    showToast('Failed to connect. Check your Supabase config.', 'error');
+    console.error(err);
+  } finally {
+    showLoading(false);
   }
-
-  // Migrate old single-category string to categories array
-  let migrated = false;
-  for (const card of state.cards) {
-    if (!Array.isArray(card.categories)) {
-      card.categories = card.category ? [card.category] : [];
-      delete card.category;
-      migrated = true;
-    }
-  }
-  if (migrated) saveJSON(STORAGE_KEYS.CARDS, state.cards);
-
   bindEvents();
   render();
 }
 
-function seedSampleData() {
-  const categories = ['Phrases', 'Verbs', 'Nouns'];
+async function loadData() {
+  const [cardsRes, catsRes] = await Promise.all([
+    db.from('cards').select('*').order('created_at', { ascending: false }),
+    db.from('categories').select('name').order('pos'),
+  ]);
+  if (cardsRes.error) throw cardsRes.error;
+  if (catsRes.error)  throw catsRes.error;
+  state.cards      = cardsRes.data.map(normalizeCard);
+  state.categories = catsRes.data.map(r => r.name);
+}
+
+async function seedSampleData() {
+  const catNames = ['Phrases', 'Verbs', 'Nouns'];
   const samples = [
-    { latin: 'Carpe diem',           english: 'Seize the day',            notes: 'From Horace\'s Odes. Often used to encourage living in the moment.', category: 'Phrases' },
-    { latin: 'Veni, vidi, vici',      english: 'I came, I saw, I conquered', notes: 'Julius Caesar\'s famous report of a swift victory.', category: 'Phrases' },
-    { latin: 'Amare',                 english: 'To love',                  notes: '1st conjugation infinitive. Amo, amas, amat…', category: 'Verbs' },
-    { latin: 'Esse',                  english: 'To be',                    notes: 'Irregular verb: sum, es, est, sumus, estis, sunt', category: 'Verbs' },
-    { latin: 'Aqua',                  english: 'Water',                    notes: '1st declension feminine noun.', category: 'Nouns' },
-    { latin: 'Lux',                   english: 'Light',                    notes: '3rd declension feminine. Lux, lucis.', category: 'Nouns' },
-    { latin: 'Amor vincit omnia',     english: 'Love conquers all',        notes: 'From Virgil\'s Eclogues.', category: 'Phrases' },
-    { latin: 'Per aspera ad astra',   english: 'Through hardship to the stars', notes: 'Common motto adopted by many institutions.', category: 'Phrases' },
+    { latin: 'Carpe diem',             english: 'Seize the day',                 notes: "From Horace's Odes. Often used to encourage living in the moment.", category: 'Phrases' },
+    { latin: 'Veni, vidi, vici',        english: 'I came, I saw, I conquered',    notes: "Julius Caesar's famous report of a swift victory.",                 category: 'Phrases' },
+    { latin: 'Amare',                   english: 'To love',                       notes: '1st conjugation infinitive. Amo, amas, amat…',                      category: 'Verbs'   },
+    { latin: 'Esse',                    english: 'To be',                         notes: 'Irregular verb: sum, es, est, sumus, estis, sunt',                   category: 'Verbs'   },
+    { latin: 'Aqua',                    english: 'Water',                         notes: '1st declension feminine noun.',                                      category: 'Nouns'   },
+    { latin: 'Lux',                     english: 'Light',                         notes: '3rd declension feminine. Lux, lucis.',                               category: 'Nouns'   },
+    { latin: 'Amor vincit omnia',       english: 'Love conquers all',             notes: "From Virgil's Eclogues.",                                            category: 'Phrases' },
+    { latin: 'Per aspera ad astra',     english: 'Through hardship to the stars', notes: 'Common motto adopted by many institutions.',                         category: 'Phrases' },
   ];
-  state.categories = categories;
-  state.cards = samples.map((s, i) => ({
-    id: 'seed_' + i,
-    latin: s.latin,
-    english: s.english,
-    notes: s.notes,
+
+  const now = Date.now();
+  const cardRows = samples.map((s, i) => ({
+    id:         'seed_' + i,
+    latin:      s.latin,
+    english:    s.english,
+    notes:      s.notes,
     categories: [s.category],
-    hasAudio: false,
-    createdAt: Date.now() - (samples.length - i) * 60000,
+    has_audio:  false,
+    audio_path: null,
+    created_at: now - (samples.length - i) * 60000,
   }));
-  saveJSON(STORAGE_KEYS.CARDS,      state.cards);
-  saveJSON(STORAGE_KEYS.CATEGORIES, state.categories);
+  const catRows = catNames.map((name, i) => ({ name, pos: i }));
+
+  const [cardsRes, catsRes] = await Promise.all([
+    db.from('cards').insert(cardRows),
+    db.from('categories').insert(catRows),
+  ]);
+  if (cardsRes.error) throw cardsRes.error;
+  if (catsRes.error)  throw catsRes.error;
+
+  state.cards      = cardRows.map(normalizeCard);
+  state.categories = catNames;
 }
 
 /* ------------------------------------------------------------------ */
@@ -138,6 +139,7 @@ const dom = {
   sidebar:           $('sidebar'),
   sidebarToggle:     $('sidebar-toggle'),
   categoryList:      $('category-list'),
+  loadingOverlay:    $('loading-overlay'),
   // browse
   cardGrid:          $('card-grid'),
   emptyState:        $('empty-state'),
@@ -167,23 +169,31 @@ const dom = {
   // delete modal
   deleteModalOverlay:   $('delete-modal-overlay'),
   // study
-  studyOverlay:      $('study-overlay'),
-  studyCard:         $('study-card'),
-  studyLatin:        $('study-latin'),
-  studyEnglish:      $('study-english'),
-  studyNotes:        $('study-notes'),
-  studyCategoryBadge:$('study-category-badge'),
-  studyAudioBtn:     $('study-audio-btn'),
-  studyAudioBtnBack: $('study-audio-btn-back'),
-  studyIndexLabel:   $('study-index-label'),
-  studyProgressBar:  $('study-progress-bar'),
-  studyCategoryFilter: $('study-category-filter'),
+  studyOverlay:       $('study-overlay'),
+  studyCard:          $('study-card'),
+  studyLatin:         $('study-latin'),
+  studyEnglish:       $('study-english'),
+  studyNotes:         $('study-notes'),
+  studyCategoryBadge: $('study-category-badge'),
+  studyAudioBtn:      $('study-audio-btn'),
+  studyAudioBtnBack:  $('study-audio-btn-back'),
+  studyIndexLabel:    $('study-index-label'),
+  studyProgressBar:   $('study-progress-bar'),
+  studyCategoryFilter:$('study-category-filter'),
   // toast
-  toast:             $('toast'),
+  toast:              $('toast'),
 };
 
 /* ------------------------------------------------------------------ */
-/*  EVENT BINDING                                                        */
+/*  LOADING OVERLAY                                                     */
+/* ------------------------------------------------------------------ */
+
+function showLoading(visible) {
+  dom.loadingOverlay.classList.toggle('hidden', !visible);
+}
+
+/* ------------------------------------------------------------------ */
+/*  EVENT BINDING                                                       */
 /* ------------------------------------------------------------------ */
 
 function bindEvents() {
@@ -256,11 +266,9 @@ function bindEvents() {
 /* ------------------------------------------------------------------ */
 
 function handleGlobalKeydown(e) {
-  // Only in study mode
   if (dom.studyOverlay.classList.contains('hidden')) return;
-  // Don't intercept if focus is on an input/select
   const tag = document.activeElement.tagName;
-  if (['INPUT','TEXTAREA','SELECT'].includes(tag)) return;
+  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
 
   switch (e.key) {
     case 'ArrowLeft':  e.preventDefault(); studyPrev(); break;
@@ -288,10 +296,7 @@ function render() {
 function renderSidebar() {
   const ul = dom.categoryList;
   ul.innerHTML = '';
-
-  const allCount = state.cards.length;
-  ul.appendChild(makeCategoryItem('all', 'All Cards', allCount));
-
+  ul.appendChild(makeCategoryItem('all', 'All Cards', state.cards.length));
   for (const cat of state.categories) {
     const count = state.cards.filter(c => (c.categories || []).includes(cat)).length;
     ul.appendChild(makeCategoryItem(cat, cat, count));
@@ -299,7 +304,7 @@ function renderSidebar() {
 }
 
 function makeCategoryItem(value, label, count) {
-  const li = document.createElement('li');
+  const li  = document.createElement('li');
   const div = document.createElement('div');
   div.className = 'category-item' + (state.activeCategory === value ? ' active' : '');
   div.dataset.cat = value;
@@ -320,10 +325,7 @@ function makeCategoryItem(value, label, count) {
     delBtn.className = 'category-delete-btn';
     delBtn.title = 'Delete category';
     delBtn.textContent = '✕';
-    delBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      deleteCategory(value);
-    });
+    delBtn.addEventListener('click', e => { e.stopPropagation(); deleteCategory(value); });
     div.appendChild(delBtn);
   }
 
@@ -332,7 +334,6 @@ function makeCategoryItem(value, label, count) {
     renderSidebar();
     renderCardGrid();
     renderCardCount();
-    // Close sidebar on mobile after selection
     if (window.innerWidth <= 700) closeSidebar();
   });
 
@@ -359,7 +360,6 @@ function ensureSidebarBackdrop(show) {
       bd.addEventListener('click', closeSidebar);
       document.body.appendChild(bd);
     }
-    // Trigger reflow then add visible class
     requestAnimationFrame(() => bd.classList.add('visible'));
   } else {
     if (bd) bd.remove();
@@ -390,16 +390,12 @@ function filteredCards() {
 function renderCardGrid() {
   const cards = filteredCards();
   dom.cardGrid.innerHTML = '';
-
   if (cards.length === 0) {
     dom.emptyState.classList.remove('hidden');
     return;
   }
   dom.emptyState.classList.add('hidden');
-
-  for (const card of cards) {
-    dom.cardGrid.appendChild(makeBrowseCard(card));
-  }
+  for (const card of cards) dom.cardGrid.appendChild(makeBrowseCard(card));
 }
 
 function makeBrowseCard(card) {
@@ -426,23 +422,21 @@ function makeBrowseCard(card) {
 
   div.innerHTML = html;
 
-  // Bind footer actions
   div.querySelector('[data-action="edit"]').addEventListener('click', () => openEditCardModal(card.id));
   div.querySelector('[data-action="delete"]').addEventListener('click', () => openDeleteModal(card.id));
   const playBtn = div.querySelector('[data-action="play"]');
-  if (playBtn) playBtn.addEventListener('click', () => playAudioForCard(card.id));
+  if (playBtn) playBtn.addEventListener('click', () => playAudioForCard(card));
 
   return div;
 }
 
 function renderCardCount() {
-  const cards = filteredCards();
-  const total = cards.length;
+  const total = filteredCards().length;
   dom.cardCountLabel.textContent = total === 1 ? '1 card' : `${total} cards`;
 }
 
 /* ------------------------------------------------------------------ */
-/*  CATEGORY SELECTS (form dropdowns)                                   */
+/*  CATEGORY SELECTS / CHECKBOXES                                       */
 /* ------------------------------------------------------------------ */
 
 function renderCategorySelects() {
@@ -479,7 +473,7 @@ function renderCategoryCheckboxes(selected = []) {
 /* ------------------------------------------------------------------ */
 
 function openNewCardModal() {
-  state.pendingAudioB64 = null;
+  state.pendingAudioFile   = null;
   state.pendingAudioRemove = false;
 
   dom.editCardId.value = '';
@@ -499,20 +493,19 @@ function openEditCardModal(cardId) {
   const card = state.cards.find(c => c.id === cardId);
   if (!card) return;
 
-  state.pendingAudioB64 = null;
+  state.pendingAudioFile   = null;
   state.pendingAudioRemove = false;
 
-  dom.editCardId.value = card.id;
+  dom.editCardId.value       = card.id;
   dom.modalTitle.textContent = 'Edit Card';
-  dom.fieldLatin.value    = card.latin;
-  dom.fieldEnglish.value  = card.english;
-  dom.fieldNotes.value    = card.notes || '';
+  dom.fieldLatin.value       = card.latin;
+  dom.fieldEnglish.value     = card.english;
+  dom.fieldNotes.value       = card.notes || '';
   dom.fieldNewCategory.value = '';
   hideFormError(dom.formError);
   renderCategorySelects();
   renderCategoryCheckboxes(card.categories || []);
 
-  // Show existing audio indicator
   if (card.hasAudio) {
     setAudioUploadUI('Existing audio attached (replace or remove)', true);
   } else {
@@ -526,11 +519,11 @@ function openEditCardModal(cardId) {
 function closeCardModal() {
   closeModal(dom.cardModalOverlay);
   dom.cardForm.reset();
-  state.pendingAudioB64 = null;
+  state.pendingAudioFile   = null;
   state.pendingAudioRemove = false;
 }
 
-function handleCardFormSubmit(e) {
+async function handleCardFormSubmit(e) {
   e.preventDefault();
   hideFormError(dom.formError);
 
@@ -548,54 +541,63 @@ function handleCardFormSubmit(e) {
   if (!latin)   { showFormError(dom.formError, 'Latin word/phrase is required.'); dom.fieldLatin.focus(); return; }
   if (!english) { showFormError(dom.formError, 'English translation is required.'); dom.fieldEnglish.focus(); return; }
 
-  // Add new category if typed
-  if (newCat && !state.categories.includes(newCat)) {
-    state.categories.push(newCat);
-    saveJSON(STORAGE_KEYS.CATEGORIES, state.categories);
+  const submitBtn = $('card-form-submit');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Saving…';
+
+  try {
+    if (newCat && !state.categories.includes(newCat)) {
+      const { error } = await db.from('categories').insert({ name: newCat, pos: state.categories.length });
+      if (error) throw error;
+      state.categories.push(newCat);
+      renderCategorySelects();
+    }
+
+    const editId   = dom.editCardId.value;
+    const id       = editId || 'card_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    const existing = editId ? state.cards.find(c => c.id === editId) : null;
+
+    let audioPath = existing?.audioPath ?? null;
+    let hasAudio  = existing?.hasAudio  ?? false;
+
+    if (state.pendingAudioRemove && audioPath) {
+      await db.storage.from('audio').remove([audioPath]);
+      audioPath = null;
+      hasAudio  = false;
+    }
+    if (state.pendingAudioFile) {
+      const ext = state.pendingAudioFile.name.split('.').pop().toLowerCase();
+      audioPath = `${id}.${ext}`;
+      const { error } = await db.storage.from('audio').upload(audioPath, state.pendingAudioFile, { upsert: true });
+      if (error) throw error;
+      hasAudio = true;
+    }
+
+    const card = {
+      id, latin, english, notes, categories,
+      hasAudio, audioPath,
+      createdAt: existing?.createdAt ?? Date.now(),
+    };
+
+    const { error: saveErr } = await db.from('cards').upsert(cardToRow(card));
+    if (saveErr) throw saveErr;
+
+    if (editId) {
+      const idx = state.cards.findIndex(c => c.id === editId);
+      if (idx !== -1) state.cards[idx] = card;
+    } else {
+      state.cards.unshift(card);
+    }
+
+    showToast(editId ? 'Card updated.' : 'Card created!', 'success');
+    closeCardModal();
+    render();
+  } catch (err) {
+    showFormError(dom.formError, 'Save failed: ' + err.message);
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Save Card';
   }
-
-  const editId = dom.editCardId.value;
-
-  if (editId) {
-    // Update existing card
-    const card = state.cards.find(c => c.id === editId);
-    if (!card) return;
-    card.latin       = latin;
-    card.english     = english;
-    card.notes       = notes;
-    card.categories  = categories;
-
-    // Handle audio
-    if (state.pendingAudioRemove) {
-      removeAudio(card.id);
-      card.hasAudio = false;
-    }
-    if (state.pendingAudioB64) {
-      if (saveAudio(card.id, state.pendingAudioB64)) {
-        card.hasAudio = true;
-      }
-    }
-
-    saveJSON(STORAGE_KEYS.CARDS, state.cards);
-    showToast('Card updated.', 'success');
-  } else {
-    // New card
-    const id = 'card_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-    const card = { id, latin, english, notes, categories, hasAudio: false, createdAt: Date.now() };
-
-    if (state.pendingAudioB64) {
-      if (saveAudio(id, state.pendingAudioB64)) {
-        card.hasAudio = true;
-      }
-    }
-
-    state.cards.unshift(card);
-    saveJSON(STORAGE_KEYS.CARDS, state.cards);
-    showToast('Card created!', 'success');
-  }
-
-  closeCardModal();
-  render();
 }
 
 /* ------------------------------------------------------------------ */
@@ -613,18 +615,13 @@ function handleAudioFileChange(e) {
     return;
   }
 
-  const reader = new FileReader();
-  reader.onload = ev => {
-    state.pendingAudioB64 = ev.target.result;
-    state.pendingAudioRemove = false;
-    setAudioUploadUI(file.name, true);
-  };
-  reader.onerror = () => showToast('Failed to read audio file.', 'error');
-  reader.readAsDataURL(file);
+  state.pendingAudioFile   = file;
+  state.pendingAudioRemove = false;
+  setAudioUploadUI(file.name, true);
 }
 
 function clearAudioPending() {
-  state.pendingAudioB64 = null;
+  state.pendingAudioFile   = null;
   state.pendingAudioRemove = true;
   dom.fieldAudio.value = '';
   clearAudioUploadUI();
@@ -657,33 +654,48 @@ function closeCategoryModal() {
   closeModal($('category-modal-overlay'));
 }
 
-function handleCategoryFormSubmit(e) {
+async function handleCategoryFormSubmit(e) {
   e.preventDefault();
   hideFormError(dom.catFormError);
   const name = dom.fieldCatName.value.trim();
   if (!name) { showFormError(dom.catFormError, 'Category name is required.'); return; }
   if (state.categories.includes(name)) { showFormError(dom.catFormError, 'Category already exists.'); return; }
 
-  state.categories.push(name);
-  saveJSON(STORAGE_KEYS.CATEGORIES, state.categories);
-  closeCategoryModal();
-  renderSidebar();
-  renderCategorySelects();
-  showToast(`Category "${name}" created.`, 'success');
+  try {
+    const { error } = await db.from('categories').insert({ name, pos: state.categories.length });
+    if (error) throw error;
+    state.categories.push(name);
+    closeCategoryModal();
+    renderSidebar();
+    renderCategorySelects();
+    showToast(`Category "${name}" created.`, 'success');
+  } catch (err) {
+    showFormError(dom.catFormError, 'Failed to save: ' + err.message);
+  }
 }
 
-function deleteCategory(name) {
+async function deleteCategory(name) {
   if (!confirm(`Delete category "${name}"? Cards in this category will become uncategorized.`)) return;
-  state.categories = state.categories.filter(c => c !== name);
-  // Remove deleted category from all cards
-  state.cards.forEach(card => {
-    card.categories = (card.categories || []).filter(c => c !== name);
-  });
-  saveJSON(STORAGE_KEYS.CARDS,      state.cards);
-  saveJSON(STORAGE_KEYS.CATEGORIES, state.categories);
-  if (state.activeCategory === name) state.activeCategory = 'all';
-  render();
-  showToast(`Category "${name}" deleted.`, 'success');
+
+  try {
+    const { error } = await db.from('categories').delete().eq('name', name);
+    if (error) throw error;
+
+    state.categories = state.categories.filter(c => c !== name);
+
+    const affected = state.cards.filter(c => (c.categories || []).includes(name));
+    for (const card of affected) {
+      card.categories = card.categories.filter(c => c !== name);
+      const { error: updErr } = await db.from('cards').update({ categories: card.categories }).eq('id', card.id);
+      if (updErr) throw updErr;
+    }
+
+    if (state.activeCategory === name) state.activeCategory = 'all';
+    render();
+    showToast(`Category "${name}" deleted.`, 'success');
+  } catch (err) {
+    showToast('Failed to delete category: ' + err.message, 'error');
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -700,15 +712,27 @@ function closeDeleteModal() {
   closeModal($('delete-modal-overlay'));
 }
 
-function confirmDeleteCard() {
+async function confirmDeleteCard() {
   const id = state.pendingDeleteId;
   if (!id) return;
-  state.cards = state.cards.filter(c => c.id !== id);
-  removeAudio(id);
-  saveJSON(STORAGE_KEYS.CARDS, state.cards);
-  closeDeleteModal();
-  render();
-  showToast('Card deleted.', 'success');
+
+  const card = state.cards.find(c => c.id === id);
+
+  try {
+    if (card?.audioPath) {
+      await db.storage.from('audio').remove([card.audioPath]);
+    }
+    const { error } = await db.from('cards').delete().eq('id', id);
+    if (error) throw error;
+
+    state.cards = state.cards.filter(c => c.id !== id);
+    closeDeleteModal();
+    render();
+    showToast('Card deleted.', 'success');
+  } catch (err) {
+    showToast('Failed to delete: ' + err.message, 'error');
+    closeDeleteModal();
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -717,11 +741,14 @@ function confirmDeleteCard() {
 
 let currentAudioEl = null;
 
-function playAudioForCard(cardId) {
-  const b64 = loadAudio(cardId);
-  if (!b64) { showToast('No audio for this card.', 'error'); return; }
+function getAudioUrl(audioPath) {
+  return db.storage.from('audio').getPublicUrl(audioPath).data.publicUrl;
+}
+
+function playAudioForCard(card) {
+  if (!card.audioPath) { showToast('No audio for this card.', 'error'); return; }
   if (currentAudioEl) { currentAudioEl.pause(); currentAudioEl = null; }
-  const audio = new Audio(b64);
+  const audio = new Audio(getAudioUrl(card.audioPath));
   currentAudioEl = audio;
   audio.play().catch(err => showToast('Audio playback error: ' + err.message, 'error'));
 }
@@ -730,7 +757,7 @@ function playCardAudio() {
   if (state.studyCards.length === 0) return;
   const card = state.studyCards[state.studyIndex];
   if (!card) return;
-  playAudioForCard(card.id);
+  playAudioForCard(card);
 }
 
 /* ------------------------------------------------------------------ */
@@ -758,8 +785,8 @@ function buildStudyDeck() {
   if (state.studyCategory !== 'all') {
     cards = cards.filter(c => (c.categories || []).includes(state.studyCategory));
   }
-  state.studyCards  = cards;
-  state.studyIndex  = 0;
+  state.studyCards   = cards;
+  state.studyIndex   = 0;
   state.studyFlipped = false;
   dom.studyCard.classList.remove('flipped');
 }
@@ -770,7 +797,7 @@ function shuffleStudy() {
     const j = Math.floor(Math.random() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
-  state.studyIndex  = 0;
+  state.studyIndex   = 0;
   state.studyFlipped = false;
   dom.studyCard.classList.remove('flipped');
   renderStudyCard();
@@ -802,12 +829,12 @@ function renderStudyCard() {
   const total = state.studyCards.length;
 
   if (total === 0) {
-    dom.studyLatin.textContent     = 'No cards';
-    dom.studyEnglish.textContent   = '';
-    dom.studyNotes.textContent     = '';
+    dom.studyLatin.textContent         = 'No cards';
+    dom.studyEnglish.textContent       = '';
+    dom.studyNotes.textContent         = '';
     dom.studyCategoryBadge.textContent = '';
-    dom.studyIndexLabel.textContent = '0 / 0';
-    dom.studyProgressBar.style.width = '0%';
+    dom.studyIndexLabel.textContent    = '0 / 0';
+    dom.studyProgressBar.style.width   = '0%';
     dom.studyAudioBtn.classList.add('hidden');
     dom.studyAudioBtnBack.classList.add('hidden');
     return;
@@ -816,18 +843,16 @@ function renderStudyCard() {
   const idx  = state.studyIndex;
   const card = state.studyCards[idx];
 
-  dom.studyLatin.textContent   = card.latin;
-  dom.studyEnglish.textContent = card.english;
-  dom.studyNotes.textContent   = card.notes || '';
+  dom.studyLatin.textContent         = card.latin;
+  dom.studyEnglish.textContent       = card.english;
+  dom.studyNotes.textContent         = card.notes || '';
   dom.studyCategoryBadge.textContent = (card.categories || []).join(' · ');
-  dom.studyIndexLabel.textContent = `${idx + 1} / ${total}`;
-  dom.studyProgressBar.style.width = `${((idx + 1) / total) * 100}%`;
+  dom.studyIndexLabel.textContent    = `${idx + 1} / ${total}`;
+  dom.studyProgressBar.style.width   = `${((idx + 1) / total) * 100}%`;
 
-  const hasAudio = card.hasAudio;
-  dom.studyAudioBtn.classList.toggle('hidden', !hasAudio);
-  dom.studyAudioBtnBack.classList.toggle('hidden', !hasAudio);
+  dom.studyAudioBtn.classList.toggle('hidden', !card.hasAudio);
+  dom.studyAudioBtnBack.classList.toggle('hidden', !card.hasAudio);
 
-  // Stop any currently playing audio on card change
   if (currentAudioEl) { currentAudioEl.pause(); currentAudioEl = null; }
 }
 
@@ -838,14 +863,12 @@ function renderStudyCard() {
 function openModal(overlay) {
   overlay.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
-  // Close on Escape
   overlay._escHandler = e => { if (e.key === 'Escape') closeModal(overlay); };
   document.addEventListener('keydown', overlay._escHandler);
 }
 
 function closeModal(overlay) {
   overlay.classList.add('hidden');
-  // Only restore scroll if study overlay also hidden
   if (dom.studyOverlay.classList.contains('hidden')) {
     document.body.style.overflow = '';
   }

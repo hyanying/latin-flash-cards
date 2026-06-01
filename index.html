@@ -8,6 +8,12 @@
 </head>
 <body>
 
+  <!-- ===== LOADING OVERLAY ===== -->
+  <div class="loading-overlay" id="loading-overlay">
+    <div class="loading-spinner"></div>
+    <p class="loading-text">Loading cards…</p>
+  </div>
+
   <!-- ===== HEADER ===== -->
   <header class="app-header">
     <div class="header-inner">
@@ -164,7 +170,7 @@
             </label>
             <button type="button" class="btn btn-ghost btn-sm hidden" id="btn-remove-audio">Remove audio</button>
           </div>
-          <p class="form-hint">MP3, WAV, M4A, OGG supported. Stored locally in your browser.</p>
+          <p class="form-hint">MP3, WAV, M4A, OGG supported. Stored in the cloud.</p>
         </div>
 
         <div class="form-error hidden" id="form-error"></div>
@@ -215,6 +221,13 @@
   <!-- ===== TOAST ===== -->
   <div class="toast hidden" id="toast"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    // ── Fill in your Supabase project details below ──────────────────
+    const SUPABASE_URL      = 'https://YOUR_PROJECT_ID.supabase.co';
+    const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';
+    // ─────────────────────────────────────────────────────────────────
+  </script>
   <script src="app.js"></script>
 </body>
 </html>
