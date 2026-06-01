@@ -1055,19 +1055,21 @@ async function handleImport() {
         ? row.id.trim()
         : 'card_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
       if (row.audio_file) audioFileMap[id] = row.audio_file;
+      // Preserve existing audio for cards that have no audio file in the ZIP
+      const existing = state.cards.find(c => c.id === id);
       return {
         id,
         latin:      row.latin      || '',
         english:    row.english    || '',
         notes:      row.notes      || '',
         categories: row.categories ? row.categories.split('|').filter(Boolean) : [],
-        has_audio:  false,
-        audio_path: null,
-        created_at: Date.now(),
+        has_audio:  existing?.hasAudio  || false,
+        audio_path: existing?.audioPath || null,
+        created_at: existing?.createdAt || Date.now(),
       };
     }).filter(r => r.latin && r.english);
 
-    // Upload audio files
+    // Upload audio files from ZIP, overwriting existing if present
     for (const row of cardRows) {
       const audioFileName = audioFileMap[row.id];
       if (!audioFileName) continue;
@@ -1080,19 +1082,19 @@ async function handleImport() {
       if (!error) { row.has_audio = true; row.audio_path = audioPath; }
     }
 
-    // Extract categories preserving order of first appearance
-    const allCats = [...new Set(cardRows.flatMap(r => r.categories))];
-
-    // Replace all existing data
-    await db.from('cards').delete().not('id', 'is', null);
-    await db.from('categories').delete().not('id', 'is', null);
-
+    // Upsert cards — updates existing (by ID), inserts new
     if (cardRows.length > 0) {
-      const { error } = await db.from('cards').insert(cardRows);
+      const { error } = await db.from('cards').upsert(cardRows);
       if (error) throw error;
     }
-    if (allCats.length > 0) {
-      const { error } = await db.from('categories').insert(allCats.map((name, i) => ({ name, pos: i })));
+
+    // Add only categories that don't already exist
+    const allCats = [...new Set(cardRows.flatMap(r => r.categories))];
+    const newCats = allCats.filter(name => !state.categories.includes(name));
+    if (newCats.length > 0) {
+      const { error } = await db.from('categories').insert(
+        newCats.map((name, i) => ({ name, pos: state.categories.length + i }))
+      );
       if (error) throw error;
     }
 
