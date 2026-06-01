@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Latin Flash Cards</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header class="app-header">
+    <div class="header-inner">
+      <h1 class="app-title">
+        <span class="title-latin">Lingua Latina</span>
+        <span class="title-sub">Flash Cards</span>
+      </h1>
+      <div class="header-actions">
+        <button id="btn-add-card" class="btn btn-primary" title="Add new card">+ New Card</button>
+        <button id="btn-study" class="btn btn-secondary" title="Start study mode">Study</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== MAIN LAYOUT ===== -->
+  <div class="app-body">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h2>Categories</h2>
+        <button id="btn-add-category" class="btn btn-ghost btn-sm" title="Add category">+ Add</button>
+      </div>
+      <ul class="category-list" id="category-list">
+        <!-- populated by JS -->
+      </ul>
+    </aside>
+
+    <!-- SIDEBAR TOGGLE (mobile) -->
+    <button id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle categories">
+      <span class="hamburger"></span>
+      <span class="hamburger"></span>
+      <span class="hamburger"></span>
+    </button>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-content" id="main-content">
+
+      <!-- BROWSE TOOLBAR -->
+      <div class="browse-toolbar" id="browse-toolbar">
+        <div class="search-wrap">
+          <input type="text" id="search-input" placeholder="Search cards…" aria-label="Search cards" />
+        </div>
+        <div class="toolbar-info">
+          <span id="card-count-label">0 cards</span>
+        </div>
+      </div>
+
+      <!-- CARD GRID -->
+      <div class="card-grid" id="card-grid">
+        <!-- populated by JS -->
+      </div>
+
+      <!-- EMPTY STATE -->
+      <div class="empty-state hidden" id="empty-state">
+        <div class="empty-icon">📖</div>
+        <p class="empty-title">No cards yet</p>
+        <p class="empty-sub">Click <strong>+ New Card</strong> to create your first Latin flashcard.</p>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- ===== STUDY MODE OVERLAY ===== -->
+  <div class="study-overlay hidden" id="study-overlay">
+    <div class="study-inner">
+      <div class="study-header">
+        <button id="study-close" class="btn btn-ghost" aria-label="Exit study mode">✕ Exit</button>
+        <div class="study-progress">
+          <span id="study-index-label">1 / 1</span>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill" id="study-progress-bar"></div>
+          </div>
+        </div>
+        <div class="study-header-right">
+          <select id="study-category-filter" class="select-styled">
+            <option value="all">All categories</option>
+          </select>
+          <button id="btn-shuffle" class="btn btn-ghost btn-sm" title="Shuffle cards">⇌ Shuffle</button>
+        </div>
+      </div>
+
+      <!-- THE CARD -->
+      <div class="study-card-wrap">
+        <div class="study-card" id="study-card" tabindex="0" role="button" aria-label="Flip card">
+          <div class="card-face card-front">
+            <div class="card-category-badge" id="study-category-badge"></div>
+            <div class="card-latin" id="study-latin"></div>
+            <div class="card-hint">tap to reveal</div>
+            <button class="audio-btn hidden" id="study-audio-btn" title="Play pronunciation" aria-label="Play audio">
+              ▶ Play Audio
+            </button>
+          </div>
+          <div class="card-face card-back">
+            <div class="card-english" id="study-english"></div>
+            <div class="card-notes" id="study-notes"></div>
+            <button class="audio-btn hidden" id="study-audio-btn-back" title="Play pronunciation" aria-label="Play audio">
+              ▶ Play Audio
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="study-controls">
+        <button id="study-prev" class="btn btn-secondary" aria-label="Previous card">← Prev</button>
+        <button id="study-flip" class="btn btn-primary">Flip</button>
+        <button id="study-next" class="btn btn-secondary" aria-label="Next card">Next →</button>
+      </div>
+
+      <p class="study-keyboard-hint">Keyboard: ← → to navigate, Space to flip</p>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: ADD / EDIT CARD ===== -->
+  <div class="modal-overlay hidden" id="card-modal-overlay">
+    <div class="modal" id="card-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-header">
+        <h2 id="modal-title">New Card</h2>
+        <button class="btn btn-ghost modal-close" id="card-modal-close" aria-label="Close">✕</button>
+      </div>
+      <form id="card-form" novalidate>
+        <input type="hidden" id="edit-card-id" />
+
+        <div class="form-group">
+          <label for="field-latin">Latin word / phrase <span class="required">*</span></label>
+          <input type="text" id="field-latin" placeholder="e.g. Carpe diem" autocomplete="off" required />
+        </div>
+
+        <div class="form-group">
+          <label for="field-english">English translation <span class="required">*</span></label>
+          <input type="text" id="field-english" placeholder="e.g. Seize the day" autocomplete="off" required />
+        </div>
+
+        <div class="form-group">
+          <label for="field-notes">Notes <span class="optional">(optional)</span></label>
+          <textarea id="field-notes" rows="3" placeholder="Grammar notes, usage, examples…"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Categories</label>
+          <div class="category-checkboxes" id="category-checkboxes">
+            <!-- populated by JS -->
+          </div>
+          <input type="text" id="field-new-category" class="category-new-input" placeholder="Type to add a new category…" autocomplete="off" />
+        </div>
+
+        <div class="form-group">
+          <label>Audio pronunciation <span class="optional">(optional)</span></label>
+          <div class="audio-upload-area" id="audio-upload-area">
+            <input type="file" id="field-audio" accept="audio/*" class="visually-hidden" />
+            <label for="field-audio" class="audio-upload-label">
+              <span class="audio-upload-icon">🎵</span>
+              <span id="audio-upload-text">Click to attach audio file</span>
+            </label>
+            <button type="button" class="btn btn-ghost btn-sm hidden" id="btn-remove-audio">Remove audio</button>
+          </div>
+          <p class="form-hint">MP3, WAV, M4A, OGG supported. Stored locally in your browser.</p>
+        </div>
+
+        <div class="form-error hidden" id="form-error"></div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" id="card-modal-cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="card-form-submit">Save Card</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: ADD CATEGORY ===== -->
+  <div class="modal-overlay hidden" id="category-modal-overlay">
+    <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="cat-modal-title">
+      <div class="modal-header">
+        <h2 id="cat-modal-title">New Category</h2>
+        <button class="btn btn-ghost modal-close" id="category-modal-close" aria-label="Close">✕</button>
+      </div>
+      <form id="category-form" novalidate>
+        <div class="form-group">
+          <label for="field-cat-name">Category name <span class="required">*</span></label>
+          <input type="text" id="field-cat-name" placeholder="e.g. Verbs, Phrases, Grammar…" autocomplete="off" required />
+        </div>
+        <div class="form-error hidden" id="cat-form-error"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" id="category-modal-cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: CONFIRM DELETE ===== -->
+  <div class="modal-overlay hidden" id="delete-modal-overlay">
+    <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
+      <div class="modal-header">
+        <h2 id="delete-modal-title">Delete Card?</h2>
+      </div>
+      <p class="modal-body-text">This cannot be undone. The card and its audio will be permanently removed.</p>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" id="delete-cancel">Cancel</button>
+        <button type="button" class="btn btn-danger" id="delete-confirm">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TOAST ===== -->
+  <div class="toast hidden" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
