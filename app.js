@@ -970,9 +970,11 @@ function parseCSVLine(line) {
 }
 
 function parseCSV(text) {
-  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim());
+  // Strip UTF-8 BOM that Excel adds to the start of CSV files
+  const clean = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+  const lines = clean.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim());
   if (lines.length < 2) return [];
-  const headers = parseCSVLine(lines[0]).map(h => h.trim());
+  const headers = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
   return lines.slice(1).map(line => {
     const values = parseCSVLine(line);
     const obj = {};
@@ -1055,7 +1057,11 @@ async function handleImport() {
       : '';
     const csvText = await csvFile.async('string');
     const rows = parseCSV(csvText);
-    if (rows.length === 0) throw new Error('cards.csv is empty or invalid.');
+    if (rows.length === 0) throw new Error('cards.csv is empty or has no data rows.');
+    const foundHeaders = Object.keys(rows[0]).join(', ');
+    if (!rows[0].latin && !rows[0].english) {
+      throw new Error(`Column headers not recognised. Found: ${foundHeaders}. Expected: id, latin, english, notes, categories, audio_file`);
+    }
 
     // Build audio filename map and card rows
     const audioFileMap = {};
