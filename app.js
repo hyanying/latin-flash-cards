@@ -1042,8 +1042,14 @@ async function handleImport() {
   try {
     const zip = await JSZip.loadAsync(file);
 
-    const csvFile = zip.file('cards.csv');
+    // Find cards.csv anywhere in the ZIP (handles macOS re-zip nesting)
+    const csvFile = Object.values(zip.files).find(
+      f => !f.dir && f.name.match(/(^|\/)cards\.csv$/)
+    );
     if (!csvFile) throw new Error('No cards.csv found in ZIP.');
+    const csvBase = csvFile.name.includes('/')
+      ? csvFile.name.slice(0, csvFile.name.lastIndexOf('/') + 1)
+      : '';
     const csvText = await csvFile.async('string');
     const rows = parseCSV(csvText);
     if (rows.length === 0) throw new Error('cards.csv is empty or invalid.');
@@ -1073,7 +1079,7 @@ async function handleImport() {
     for (const row of cardRows) {
       const audioFileName = audioFileMap[row.id];
       if (!audioFileName) continue;
-      const audioEntry = zip.file('audio/' + audioFileName);
+      const audioEntry = zip.file(csvBase + 'audio/' + audioFileName);
       if (!audioEntry) continue;
       const blob = await audioEntry.async('blob');
       const ext  = audioFileName.split('.').pop().toLowerCase();
