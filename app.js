@@ -1088,7 +1088,13 @@ async function handleImport() {
         audio_path: existing?.audioPath || null,
         created_at: existing?.createdAt || Date.now(),
       };
-    }).filter(r => r.latin && r.english);
+    });
+    const totalParsed = cardRows.length;
+    const filtered = cardRows.filter(r => r.latin && r.english);
+    console.log('CSV rows parsed:', totalParsed, '| After filter:', filtered.length);
+    cardRows.forEach((r, i) => console.log(`Row ${i}:`, JSON.stringify(r)));
+    filtered.length > 0 && cardRows.splice(0, cardRows.length, ...filtered);
+    if (cardRows.length === 0) throw new Error(`All ${totalParsed} rows were filtered out (missing latin or english).`);
 
     // Upload audio files from ZIP, overwriting existing if present
     for (const row of cardRows) {
@@ -1123,7 +1129,7 @@ async function handleImport() {
     state.activeCategory = 'all';
     closeImportModal();
     render();
-    showToast(`Imported ${cardRows.length} cards.`, 'success');
+    showToast(`Imported ${cardRows.length} of ${totalParsed} rows.`, 'success');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Import';
