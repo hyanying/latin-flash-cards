@@ -974,8 +974,14 @@ function parseCSV(text) {
   const clean = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
   const lines = clean.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim());
   if (lines.length < 2) return [];
-  const headers = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
-  return lines.slice(1).map(line => {
+  // Find the header row — Numbers adds a table-name row before the real headers
+  let headerIdx = 0;
+  for (let i = 0; i < Math.min(5, lines.length); i++) {
+    const cols = parseCSVLine(lines[i]).map(h => h.trim().toLowerCase());
+    if (cols.includes('latin') && cols.includes('english')) { headerIdx = i; break; }
+  }
+  const headers = parseCSVLine(lines[headerIdx]).map(h => h.trim().toLowerCase());
+  return lines.slice(headerIdx + 1).map(line => {
     const values = parseCSVLine(line);
     const obj = {};
     headers.forEach((h, i) => { obj[h] = (values[i] || '').trim(); });
