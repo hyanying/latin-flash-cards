@@ -1046,7 +1046,10 @@ async function handleImport() {
     const csvFile = Object.values(zip.files).find(
       f => !f.dir && f.name.match(/(^|\/)cards\.csv$/)
     );
-    if (!csvFile) throw new Error('No cards.csv found in ZIP.');
+    if (!csvFile) {
+      const found = Object.keys(zip.files).join(', ') || '(empty)';
+      throw new Error(`No cards.csv found. Files in ZIP: ${found}`);
+    }
     const csvBase = csvFile.name.includes('/')
       ? csvFile.name.slice(0, csvFile.name.lastIndexOf('/') + 1)
       : '';
