@@ -23,6 +23,9 @@ function normalizeCard(row) {
     notes:        row.notes         || '',
     categories:   row.categories    || [],
     partOfSpeech: row.part_of_speech || null,
+    nounCase:     row.noun_case     || null,
+    nounNumber:   row.noun_number   || null,
+    nounGender:   row.noun_gender   || null,
     hasAudio:     row.has_audio     || false,
     audioPath:    row.audio_path    || null,
     createdAt:    row.created_at,
@@ -37,6 +40,9 @@ function cardToRow(card) {
     notes:          card.notes,
     categories:     card.categories,
     part_of_speech: card.partOfSpeech || null,
+    noun_case:      card.nounCase    || null,
+    noun_number:    card.nounNumber  || null,
+    noun_gender:    card.nounGender  || null,
     has_audio:      card.hasAudio,
     audio_path:     card.audioPath,
     created_at:     card.createdAt,
@@ -157,6 +163,10 @@ const dom = {
   fieldEnglish:      $('field-english'),
   fieldNotes:        $('field-notes'),
   fieldPos:          $('field-pos'),
+  nounFields:        $('noun-fields'),
+  fieldNounCase:     $('field-noun-case'),
+  fieldNounNumber:   $('field-noun-number'),
+  fieldNounGender:   $('field-noun-gender'),
   categoryCheckboxes:$('category-checkboxes'),
   fieldNewCategory:  $('field-new-category'),
   fieldAudio:        $('field-audio'),
@@ -179,6 +189,7 @@ const dom = {
   studyNotes:         $('study-notes'),
   studyCategoryBadge: $('study-category-badge'),
   studyPosBadge:      $('study-pos-badge'),
+  studyNounProps:     $('study-noun-props'),
   studyAudioBtn:      $('study-audio-btn'),
   studyAudioBtnBack:  $('study-audio-btn-back'),
   studyIndexLabel:    $('study-index-label'),
@@ -276,6 +287,17 @@ function bindEvents() {
   });
   dom.studyAudioBtn.addEventListener('click', e => { e.stopPropagation(); playCardAudio(); });
   dom.studyAudioBtnBack.addEventListener('click', e => { e.stopPropagation(); playCardAudio(); });
+
+  // Show/hide noun-specific fields when part of speech changes
+  dom.fieldPos.addEventListener('change', () => {
+    const isNoun = dom.fieldPos.value === 'Noun';
+    dom.nounFields.classList.toggle('hidden', !isNoun);
+    if (!isNoun) {
+      dom.fieldNounCase.value   = '';
+      dom.fieldNounNumber.value = '';
+      dom.fieldNounGender.value = '';
+    }
+  });
 
   // Keyboard shortcuts (global)
   document.addEventListener('keydown', handleGlobalKeydown);
@@ -430,6 +452,10 @@ function makeBrowseCard(card) {
   ].filter(Boolean).join(' &nbsp;·&nbsp; ');
   if (topLine) html += `<div class="browse-card-category">${topLine}</div>`;
   html += `<div class="browse-card-latin">${escHtml(card.latin)}</div>`;
+  const nounProps = [card.nounCase, card.nounNumber, card.nounGender].filter(Boolean);
+  if (nounProps.length) {
+    html += `<div class="browse-card-noun-props">${nounProps.map(escHtml).join(' · ')}</div>`;
+  }
   html += `<div class="browse-card-english">${escHtml(card.english)}</div>`;
   if (card.notes) {
     html += `<div class="browse-card-notes">${escHtml(card.notes)}</div>`;
@@ -502,6 +528,7 @@ function openNewCardModal() {
   dom.modalTitle.textContent = 'New Card';
   dom.cardForm.reset();
   dom.fieldPos.value = '';
+  dom.nounFields.classList.add('hidden');
   clearAudioUploadUI();
   hideFormError(dom.formError);
   renderCategorySelects();
@@ -525,6 +552,11 @@ function openEditCardModal(cardId) {
   dom.fieldEnglish.value     = card.english;
   dom.fieldNotes.value       = card.notes || '';
   dom.fieldPos.value         = card.partOfSpeech || '';
+  const isNoun = card.partOfSpeech === 'Noun';
+  dom.nounFields.classList.toggle('hidden', !isNoun);
+  dom.fieldNounCase.value    = card.nounCase   || '';
+  dom.fieldNounNumber.value  = card.nounNumber || '';
+  dom.fieldNounGender.value  = card.nounGender || '';
   dom.fieldNewCategory.value = '';
   hideFormError(dom.formError);
   renderCategorySelects();
@@ -555,6 +587,9 @@ async function handleCardFormSubmit(e) {
   const english = dom.fieldEnglish.value.trim();
   const notes   = dom.fieldNotes.value.trim();
   const partOfSpeech = dom.fieldPos.value || null;
+  const nounCase     = partOfSpeech === 'Noun' ? dom.fieldNounCase.value   || null : null;
+  const nounNumber   = partOfSpeech === 'Noun' ? dom.fieldNounNumber.value || null : null;
+  const nounGender   = partOfSpeech === 'Noun' ? dom.fieldNounGender.value || null : null;
   const newCat  = dom.fieldNewCategory.value.trim();
   const checkedCats = Array.from(
     dom.categoryCheckboxes.querySelectorAll('input[type="checkbox"]:checked')
@@ -599,7 +634,8 @@ async function handleCardFormSubmit(e) {
     }
 
     const card = {
-      id, latin, english, notes, categories, partOfSpeech,
+      id, latin, english, notes, categories,
+      partOfSpeech, nounCase, nounNumber, nounGender,
       hasAudio, audioPath,
       createdAt: existing?.createdAt ?? Date.now(),
     };
@@ -859,6 +895,7 @@ function renderStudyCard() {
     dom.studyNotes.textContent         = '';
     dom.studyCategoryBadge.textContent = '';
     dom.studyPosBadge.textContent      = '';
+    dom.studyNounProps.textContent     = '';
     dom.studyIndexLabel.textContent    = '0 / 0';
     dom.studyProgressBar.style.width   = '0%';
     dom.studyAudioBtn.classList.add('hidden');
@@ -874,6 +911,8 @@ function renderStudyCard() {
   dom.studyNotes.textContent         = card.notes || '';
   dom.studyCategoryBadge.textContent = (card.categories || []).join(' · ');
   dom.studyPosBadge.textContent      = card.partOfSpeech || '';
+  const nounParts = [card.nounCase, card.nounNumber, card.nounGender].filter(Boolean);
+  dom.studyNounProps.textContent     = nounParts.join(' · ');
   dom.studyIndexLabel.textContent    = `${idx + 1} / ${total}`;
   dom.studyProgressBar.style.width   = `${((idx + 1) / total) * 100}%`;
 
@@ -949,13 +988,16 @@ function csvEscape(val) {
 }
 
 function cardsToCSV(cards) {
-  const headers = ['id', 'latin', 'english', 'notes', 'part_of_speech', 'categories', 'audio_file'];
+  const headers = ['id', 'latin', 'english', 'notes', 'part_of_speech', 'noun_case', 'noun_number', 'noun_gender', 'categories', 'audio_file'];
   const rows = cards.map(card => [
     card.id,
     card.latin,
     card.english,
     card.notes || '',
     card.partOfSpeech || '',
+    card.nounCase     || '',
+    card.nounNumber   || '',
+    card.nounGender   || '',
     (card.categories || []).join('|'),
     card.audioPath || '',
   ]);
@@ -1096,6 +1138,9 @@ async function handleImport() {
         english:        row.english        || '',
         notes:          row.notes          || '',
         part_of_speech: row.part_of_speech || null,
+        noun_case:      row.noun_case      || null,
+        noun_number:    row.noun_number    || null,
+        noun_gender:    row.noun_gender    || null,
         categories:     row.categories ? row.categories.split('|').filter(Boolean) : [],
         has_audio:      existing?.hasAudio  || false,
         audio_path:     existing?.audioPath || null,

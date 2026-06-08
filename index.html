@@ -105,6 +105,7 @@
             <div class="card-category-badge" id="study-category-badge"></div>
             <div class="card-pos-badge" id="study-pos-badge"></div>
             <div class="card-latin" id="study-latin"></div>
+            <div class="card-noun-props" id="study-noun-props"></div>
             <div class="card-hint">tap to reveal</div>
             <button class="audio-btn hidden" id="study-audio-btn" title="Play pronunciation" aria-label="Play audio">
               ▶ Play Audio
@@ -168,6 +169,41 @@
             <option value="Conjunction">Conjunction</option>
             <option value="Interjection">Interjection</option>
           </select>
+        </div>
+
+        <!-- Noun-specific fields — shown only when Part of speech = Noun -->
+        <div class="noun-fields hidden" id="noun-fields">
+          <div class="noun-fields-grid">
+            <div class="form-group">
+              <label for="field-noun-case">Case</label>
+              <select id="field-noun-case" class="select-styled">
+                <option value="">— Select —</option>
+                <option value="Nominative">Nominative</option>
+                <option value="Genitive">Genitive</option>
+                <option value="Dative">Dative</option>
+                <option value="Accusative">Accusative</option>
+                <option value="Ablative">Ablative</option>
+                <option value="Vocative">Vocative</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="field-noun-number">Number</label>
+              <select id="field-noun-number" class="select-styled">
+                <option value="">— Select —</option>
+                <option value="Singular">Singular</option>
+                <option value="Plural">Plural</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="field-noun-gender">Gender</label>
+              <select id="field-noun-gender" class="select-styled">
+                <option value="">— Select —</option>
+                <option value="Masculine">Masculine</option>
+                <option value="Feminine">Feminine</option>
+                <option value="Neuter">Neuter</option>
+              </select>
+            </div>
+          </div>
         </div>
 
         <div class="form-group">

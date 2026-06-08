@@ -35,6 +35,9 @@ create policy "public access" on cards      for all to anon using (true) with ch
 -- ============================================================
 
 alter table cards add column if not exists part_of_speech text;
+alter table cards add column if not exists noun_case      text;
+alter table cards add column if not exists noun_number    text;
+alter table cards add column if not exists noun_gender    text;
 
 -- ============================================================
 -- Storage: run after creating the "audio" bucket in the dashboard

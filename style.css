@@ -641,6 +641,33 @@ a { color: var(--color-accent); }
 .audio-upload-label:hover { color: var(--color-accent); }
 .audio-upload-icon { font-size: 1.25rem; }
 
+/* ---------- NOUN FIELDS ---------- */
+.noun-fields {
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+.noun-fields-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.75rem;
+}
+.noun-fields .form-group { margin-bottom: 0; }
+
+.browse-card-noun-props {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  letter-spacing: .03em;
+}
+.card-noun-props {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  letter-spacing: .03em;
+}
+.card-noun-props:empty { display: none; }
+
 /* ---------- FILE INPUT ---------- */
 .file-input {
   width: 100%;
@@ -748,6 +775,7 @@ a { color: var(--color-accent); }
 
   .study-keyboard-hint { display: none; }
 
+  .noun-fields-grid { grid-template-columns: 1fr; }
   .header-actions .btn { padding: 0.4rem 0.75rem; font-size: 0.82rem; }
 }
 
