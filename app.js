@@ -17,27 +17,29 @@ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 function normalizeCard(row) {
   return {
-    id:         row.id,
-    latin:      row.latin,
-    english:    row.english,
-    notes:      row.notes      || '',
-    categories: row.categories || [],
-    hasAudio:   row.has_audio  || false,
-    audioPath:  row.audio_path || null,
-    createdAt:  row.created_at,
+    id:           row.id,
+    latin:        row.latin,
+    english:      row.english,
+    notes:        row.notes         || '',
+    categories:   row.categories    || [],
+    partOfSpeech: row.part_of_speech || null,
+    hasAudio:     row.has_audio     || false,
+    audioPath:    row.audio_path    || null,
+    createdAt:    row.created_at,
   };
 }
 
 function cardToRow(card) {
   return {
-    id:          card.id,
-    latin:       card.latin,
-    english:     card.english,
-    notes:       card.notes,
-    categories:  card.categories,
-    has_audio:   card.hasAudio,
-    audio_path:  card.audioPath,
-    created_at:  card.createdAt,
+    id:             card.id,
+    latin:          card.latin,
+    english:        card.english,
+    notes:          card.notes,
+    categories:     card.categories,
+    part_of_speech: card.partOfSpeech || null,
+    has_audio:      card.hasAudio,
+    audio_path:     card.audioPath,
+    created_at:     card.createdAt,
   };
 }
 
@@ -154,6 +156,7 @@ const dom = {
   fieldLatin:        $('field-latin'),
   fieldEnglish:      $('field-english'),
   fieldNotes:        $('field-notes'),
+  fieldPos:          $('field-pos'),
   categoryCheckboxes:$('category-checkboxes'),
   fieldNewCategory:  $('field-new-category'),
   fieldAudio:        $('field-audio'),
@@ -175,6 +178,7 @@ const dom = {
   studyEnglish:       $('study-english'),
   studyNotes:         $('study-notes'),
   studyCategoryBadge: $('study-category-badge'),
+  studyPosBadge:      $('study-pos-badge'),
   studyAudioBtn:      $('study-audio-btn'),
   studyAudioBtnBack:  $('study-audio-btn-back'),
   studyIndexLabel:    $('study-index-label'),
@@ -420,9 +424,11 @@ function makeBrowseCard(card) {
   div.dataset.id = card.id;
 
   let html = '';
-  if (card.categories && card.categories.length > 0) {
-    html += `<div class="browse-card-category">${card.categories.map(escHtml).join(' · ')}</div>`;
-  }
+  const topLine = [
+    card.categories && card.categories.length > 0 ? card.categories.map(escHtml).join(' · ') : null,
+    card.partOfSpeech ? `<span class="browse-card-pos">${escHtml(card.partOfSpeech)}</span>` : null,
+  ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+  if (topLine) html += `<div class="browse-card-category">${topLine}</div>`;
   html += `<div class="browse-card-latin">${escHtml(card.latin)}</div>`;
   html += `<div class="browse-card-english">${escHtml(card.english)}</div>`;
   if (card.notes) {
@@ -495,6 +501,7 @@ function openNewCardModal() {
   dom.editCardId.value = '';
   dom.modalTitle.textContent = 'New Card';
   dom.cardForm.reset();
+  dom.fieldPos.value = '';
   clearAudioUploadUI();
   hideFormError(dom.formError);
   renderCategorySelects();
@@ -517,6 +524,7 @@ function openEditCardModal(cardId) {
   dom.fieldLatin.value       = card.latin;
   dom.fieldEnglish.value     = card.english;
   dom.fieldNotes.value       = card.notes || '';
+  dom.fieldPos.value         = card.partOfSpeech || '';
   dom.fieldNewCategory.value = '';
   hideFormError(dom.formError);
   renderCategorySelects();
@@ -546,6 +554,7 @@ async function handleCardFormSubmit(e) {
   const latin   = dom.fieldLatin.value.trim();
   const english = dom.fieldEnglish.value.trim();
   const notes   = dom.fieldNotes.value.trim();
+  const partOfSpeech = dom.fieldPos.value || null;
   const newCat  = dom.fieldNewCategory.value.trim();
   const checkedCats = Array.from(
     dom.categoryCheckboxes.querySelectorAll('input[type="checkbox"]:checked')
@@ -590,7 +599,7 @@ async function handleCardFormSubmit(e) {
     }
 
     const card = {
-      id, latin, english, notes, categories,
+      id, latin, english, notes, categories, partOfSpeech,
       hasAudio, audioPath,
       createdAt: existing?.createdAt ?? Date.now(),
     };
@@ -849,6 +858,7 @@ function renderStudyCard() {
     dom.studyEnglish.textContent       = '';
     dom.studyNotes.textContent         = '';
     dom.studyCategoryBadge.textContent = '';
+    dom.studyPosBadge.textContent      = '';
     dom.studyIndexLabel.textContent    = '0 / 0';
     dom.studyProgressBar.style.width   = '0%';
     dom.studyAudioBtn.classList.add('hidden');
@@ -863,6 +873,7 @@ function renderStudyCard() {
   dom.studyEnglish.textContent       = card.english;
   dom.studyNotes.textContent         = card.notes || '';
   dom.studyCategoryBadge.textContent = (card.categories || []).join(' · ');
+  dom.studyPosBadge.textContent      = card.partOfSpeech || '';
   dom.studyIndexLabel.textContent    = `${idx + 1} / ${total}`;
   dom.studyProgressBar.style.width   = `${((idx + 1) / total) * 100}%`;
 
@@ -938,12 +949,13 @@ function csvEscape(val) {
 }
 
 function cardsToCSV(cards) {
-  const headers = ['id', 'latin', 'english', 'notes', 'categories', 'audio_file'];
+  const headers = ['id', 'latin', 'english', 'notes', 'part_of_speech', 'categories', 'audio_file'];
   const rows = cards.map(card => [
     card.id,
     card.latin,
     card.english,
     card.notes || '',
+    card.partOfSpeech || '',
     (card.categories || []).join('|'),
     card.audioPath || '',
   ]);
@@ -1080,13 +1092,14 @@ async function handleImport() {
       const existing = state.cards.find(c => c.id === id);
       return {
         id,
-        latin:      row.latin      || '',
-        english:    row.english    || '',
-        notes:      row.notes      || '',
-        categories: row.categories ? row.categories.split('|').filter(Boolean) : [],
-        has_audio:  existing?.hasAudio  || false,
-        audio_path: existing?.audioPath || null,
-        created_at: existing?.createdAt || Date.now(),
+        latin:          row.latin          || '',
+        english:        row.english        || '',
+        notes:          row.notes          || '',
+        part_of_speech: row.part_of_speech || null,
+        categories:     row.categories ? row.categories.split('|').filter(Boolean) : [],
+        has_audio:      existing?.hasAudio  || false,
+        audio_path:     existing?.audioPath || null,
+        created_at:     existing?.createdAt || Date.now(),
       };
     }).filter(r => r.latin);
     if (cardRows.length === 0) throw new Error('No valid rows found — every row needs at least a latin value.');

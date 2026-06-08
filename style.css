@@ -271,6 +271,11 @@ a { color: var(--color-accent); }
   font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
   letter-spacing: .07em; color: var(--color-accent);
 }
+.browse-card-pos {
+  font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--color-secondary);
+}
 .browse-card-latin {
   font-size: 1.15rem; font-weight: 700; color: var(--color-text);
   line-height: 1.3;
@@ -419,6 +424,16 @@ a { color: var(--color-accent); }
   overflow: hidden; text-overflow: ellipsis;
 }
 .card-category-badge:empty { display: none; }
+
+.card-pos-badge {
+  position: absolute; top: 1rem; right: 1rem;
+  font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--color-secondary);
+  background: rgba(74,124,94,.12);
+  padding: 2px 8px; border-radius: 99px;
+}
+.card-pos-badge:empty { display: none; }
 
 .card-latin {
   font-size: clamp(1.4rem, 5vw, 2.4rem);

@@ -103,6 +103,7 @@
         <div class="study-card" id="study-card" tabindex="0" role="button" aria-label="Flip card">
           <div class="card-face card-front">
             <div class="card-category-badge" id="study-category-badge"></div>
+            <div class="card-pos-badge" id="study-pos-badge"></div>
             <div class="card-latin" id="study-latin"></div>
             <div class="card-hint">tap to reveal</div>
             <button class="audio-btn hidden" id="study-audio-btn" title="Play pronunciation" aria-label="Play audio">
@@ -152,6 +153,21 @@
         <div class="form-group">
           <label for="field-notes">Notes <span class="optional">(optional)</span></label>
           <textarea id="field-notes" rows="3" placeholder="Grammar notes, usage, examples…"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="field-pos">Part of speech <span class="optional">(optional)</span></label>
+          <select id="field-pos" class="select-styled">
+            <option value="">— Select —</option>
+            <option value="Noun">Noun</option>
+            <option value="Verb">Verb</option>
+            <option value="Pronoun">Pronoun</option>
+            <option value="Adjective">Adjective</option>
+            <option value="Adverb">Adverb</option>
+            <option value="Preposition">Preposition</option>
+            <option value="Conjunction">Conjunction</option>
+            <option value="Interjection">Interjection</option>
+          </select>
         </div>
 
         <div class="form-group">

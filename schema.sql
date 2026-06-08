@@ -31,6 +31,12 @@ create policy "public access" on categories for all to anon using (true) with ch
 create policy "public access" on cards      for all to anon using (true) with check (true);
 
 -- ============================================================
+-- Migration: run this if you already created the cards table
+-- ============================================================
+
+alter table cards add column if not exists part_of_speech text;
+
+-- ============================================================
 -- Storage: run after creating the "audio" bucket in the dashboard
 -- Storage > New bucket > name: audio > Public bucket: ON
 -- Then run these policies:
